@@ -1,9 +1,9 @@
 ---
-name: retrospect
-description: 그동안의 추천·분석 기록을 현재가와 대조해 무엇이 맞고 틀렸는지 회고하고 기준을 개선한다. 스크립트가 status(목표달성/손절/관찰중)를 결정론적으로 확정하고, 4명의 전문가 서브에이전트(기술적·펀더멘털·거시·회의론자)가 수렴할 때까지 토론해 해석·튜닝안을 도출한 뒤, 원본 status를 갱신하고 회고 리포트를 남긴다. 사용자가 "회고", "회고해줘", "그동안 추천 어땠어 점검", "retrospect" 등을 요청할 때 사용한다(주 1회 권장, 수동 실행).
+name: portfolio-retrospect
+description: 그동안의 투자 추천·분석 기록(recommend-stocks/analyze-company)을 현재가와 대조해 무엇이 맞고 틀렸는지 회고하고 매매 기준을 개선한다. 스크립트가 status(목표달성/손절/관찰중)를 결정론적으로 확정하고, 4명의 전문가 서브에이전트(기술적·펀더멘털·거시·회의론자)가 수렴할 때까지 토론해 해석·튜닝안을 도출한 뒤, 원본 status를 갱신하고 회고 리포트를 남긴다. 사용자가 "투자 회고", "종목 회고", "그동안 추천 어땠어 점검", "portfolio-retrospect" 등을 요청할 때 사용한다(주 1회 권장, 수동 실행). 개발 워크플로우 자체를 되짚는 회고는 `retrospect` 스킬을 대신 쓴다.
 ---
 
-# retrospect — 회고 스킬
+# portfolio-retrospect — 투자 회고 스킬
 
 OS 루프의 **피드백 단계**다. `recommend-stocks`(선정 기록)와 `analyze-company`(분석 기록)가
 쌓아둔 과거 예측을 **현재가와 대조**해 무엇이 맞고 틀렸는지 가리고, 다음 추천·분석에 쓸 기준을 개선한다.
@@ -12,6 +12,12 @@ OS 루프의 **피드백 단계**다. `recommend-stocks`(선정 기록)와 `anal
 "목표 도달했나/손절 닿았나"는 현재가와 진입/목표/손절을 비교하는 *산수*라 스크립트가 결정론적으로 확정한다.
 "왜 그랬나 / 기준을 어떻게 바꾸나"는 정답이 없는 *해석*이라 전문가들이 수렴할 때까지 토론한다.
 (OS 철학: 정성 해석=서브에이전트, 정밀 수치=결정론적 스크립트. analyze-company 와 동일한 분리.)
+
+## 시작 전 컨텍스트 (반드시 먼저 Read)
+
+회고를 시작하기 전에 `.claude/context/record-conventions.md`를 Read로 읽어라 — 기록 3종(분석·추천·회고)의 경로·스키마·불변 규칙(예측 박제, status만 갱신)을 따라 기록을 읽고 쓴다.
+
+(투자 성향 `investor-profile.md`·매매 가드레일 `trading-principles.md`는 CLAUDE.md가 항상 로드하므로 다시 읽을 필요 없다. `market-glossary.md`는 토론 전문가 4인이 각자 읽는다.)
 
 ```
 A. [스크립트] evaluate_records.py  → 종목별 status·실현수익률 사실 확정 (현재가는 quote.py 재사용)
@@ -30,7 +36,7 @@ C. [종합] update_status.py 로 원본 status 갱신 + save_retro.py 로 회고
 ### 1단계 — 사실 판정 (결정론적 스크립트) ⚠️ 토론보다 먼저
 현재가를 끌어와 과거 예측의 결과를 **사실로 확정**한다. 이 수치가 이후 토론의 공통 근거(사실표)다.
 ```
-python3 .claude/skills/retrospect/scripts/evaluate_records.py
+python3 .claude/skills/portfolio-retrospect/scripts/evaluate_records.py
 ```
 - `data/analyses/*.md` 전체를 읽어 각 종목의 현재가(analyze-company `quote.py` 재사용)와
   진입/목표/손절을 대조해 `status`(hit_target | stopped | watching | open)·실현수익률·경과일을 산출한다.
@@ -78,52 +84,26 @@ Agent(kr-macro-researcher) ← "기간: <가장 이른 분석일> ~ <기준일(�
 > **사회자로서 네 자세:** 전문가 말을 그대로 받아쓰지 말고, 충돌을 **연결·중재**하라. 예: 기술적은 "진입 적중"이라는데 거시는 "그냥 장이 좋았다"면 → 회의론자에게 표본·베타 분리를 묻고, 셋의 말을 종합해 "실력인지 운인지" 결론을 내려라.
 
 ### 3단계 — 종합 & 기록 (방식 A)
-토론 결과를 사용자에게 보여주고, 두 가지를 기록한다.
+토론 결과를 사용자에게 보여주고, 두 가지를 기록한다. **출력 골격·저장 스키마 상세는 `references/output-template.md`에 있다** — 이 단계에서 해당 파일을 Read로 읽어 확정한다(점진적 공개). 골격만 여기 둔다:
 
 **(a) 원본 status 갱신** — 1단계에서 status 가 바뀐 종목만(`status_changes`):
 ```
-echo '{"updates":[{"file":"data/analyses/...","status":"hit_target"}, ...]}' | python3 .claude/skills/retrospect/scripts/update_status.py
+echo '{"updates":[{"file":"data/analyses/...","status":"hit_target"}, ...]}' | python3 .claude/skills/portfolio-retrospect/scripts/update_status.py
 ```
 - 원본 분석파일의 **frontmatter `status:` 줄만** 바뀐다. 진입/목표/손절·근거·본문은 **건드리지 않는다**(예측 박제).
-- 이로써 `recommend-stocks` 추천표가 분석 기록 status 를 역참조할 때 회고 결과가 자동 반영된다.
 
-**(b) 회고 리포트 저장** — 토론 경위·종목별 평가·튜닝안을 조립해 넘긴다(스키마는 `scripts/save_retro.py` 상단):
+**(b) 회고 리포트 저장** — 토론 경위·종목별 평가·튜닝안을 조립해 넘긴다(스키마는 references/output-template.md):
 ```
-echo '<조립한 JSON>' | python3 .claude/skills/retrospect/scripts/save_retro.py
+echo '<조립한 JSON>' | python3 .claude/skills/portfolio-retrospect/scripts/save_retro.py
 ```
-- `data/retros/YYYY-MM-DD-retro.md` 로 append-only 저장(같은 날 재실행은 `-2`,`-3`…).
-- `rounds`·`converged`·`open_issues` 에 토론이 몇 라운드 돌았고 수렴했는지, 미해결 쟁점이 뭔지 정확히 담는다.
+- `data/retros/YYYY-MM-DD-retro.md` 로 append-only 저장. `rounds`·`converged`·`open_issues`를 정확히 담는다.
 
 ### 4단계 — 사용자에게 출력
-아래 골격으로 보여준다.
-```
-# 📒 회고 리포트  (기준일: YYYY-MM-DD)
-
-## 성적표 (사실)
-- 평가 N건: 목표달성 x · 손절 y · 관찰중 z · 평균 실현수익률 ±%
-- (종목별 status·실현수익률 표)
-
-## 전문가 토론 요약
-- 총 R라운드 (수렴 종료 / 5R 미합의)
-- 핵심 쟁점과 어떻게 결론났나 (실력 vs 운 등)
-
-## 합의된 결론
-- ...
-
-## 미해결 쟁점 (있으면 — 다음 회고로 이월)
-- ...
-
-## 튜닝 제안 (다음 추천/분석 반영 — ⚠️ 실제 수정은 사람 승인)
-- [대상 스크립트/문서] 무엇을 어떻게 — 왜
-
-## ⚠️ 유의
-- 회고는 과거 예측을 평가할 뿐, 원본 분석의 가격대·근거는 수정하지 않는다.
-- 튜닝안은 제안이며, 스크립트 상수/OS.md 의 실제 변경은 사람이 승인 후 반영한다.
-```
+**출력 골격(템플릿)은 이 단계에서 `references/output-template.md`를 Read로 읽어 확정**한다(점진적 공개 — 형식은 실행 시점에만 필요). 핵심 섹션: 성적표(사실)·전문가 토론 요약·합의된 결론·미해결 쟁점·튜닝 제안·유의.
 
 ### 5단계 — 튜닝 반영은 사람 승인 후
 도출된 튜닝안(예: "부채비율 컷 150%→130%")은 **제안까지**가 이 스킬의 역할이다.
-사용자가 승인하면 그때 해당 스크립트 상수와 `docs/OS.md`(+`docs/OS-log.md` 로그)를 함께 고친다.
+사용자가 승인하면 그때 해당 스크립트 상수와 `docs/OS.md`를 함께 고친다.
 *왜 자동 반영 안 하나:* OS 가드레일 — 기준 변경은 영향이 크고, 회고가 자기 판단으로 시스템을 바꾸면 통제 불능. 사람이 최종 결정.
 
 ## 원칙
