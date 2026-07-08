@@ -21,6 +21,21 @@
             "statusMessage": "PR 템플릿 강제 검사..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-context.sh\"",
+            "statusMessage": "컨텍스트 카드 주입 확인..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-domain.sh\"",
+            "statusMessage": "도메인 문서 주입 확인..."
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -30,6 +45,17 @@
             "type": "command",
             "command": "jq -r '.prompt // \"\"' | grep -oE '^/[a-zA-Z][a-zA-Z0-9:_-]*' | head -1 | sed 's|^/||' | { read -r s; [ -n \"$s\" ] && printf '%s\\t%s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$s\" >> \"$CLAUDE_PROJECT_DIR/.claude/skill-usage.log\"; } 2>/dev/null || true",
             "statusMessage": "슬래시 명령 기록 중..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/retro-reminder.sh\"",
+            "statusMessage": "회고 리마인더..."
           }
         ]
       }
