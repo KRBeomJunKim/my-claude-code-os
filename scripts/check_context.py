@@ -2,12 +2,15 @@
 """컨텍스트 주입 정적 검증 (step2 도전1).
 
 혼합 주입 전략의 연결이 올바른지 결정론적으로 검사한다:
-  ① 컨텍스트 파일 6종이 .claude/context/ 에 존재하는가
+  ① 컨텍스트 파일 8종이 .claude/context/ 에 존재하는가
   ② 항상 로드 2종이 CLAUDE.md 에 연결(@임포트)돼 있는가
-  ③ 각 소비자(SKILL.md·에이전트 md)가 자기 몫 컨텍스트 경로를 참조하는가
+  ③ 현존 소비자(에이전트·스킬 md)가 자기 몫 컨텍스트 경로를 참조하는가
 
-실패 시 어떤 연결이 빠졌는지 출력하고 exit 1. (런타임에 모델이 지시를
-실제로 따르는지는 A/B 비교가 검증 — 이 스크립트는 정적 연결만 책임진다.)
+자동 시뮬레이션 루프 개편으로 옛 3스킬·회고 전문가 4인이 폐기됐다. 새 루프 스킬
+(아침 브리핑·위원회·시뮬 엔진·주간 회고)이 모두 신설돼, 그 소비자 링크를 ③에서 강제한다
+(루프 오케스트레이션 항목의 check_context 마감). 실패 시 어떤 연결이 빠졌는지 출력하고
+exit 1. (런타임에 모델이 지시를 실제로 따르는지는 A/B 비교가 검증 — 이 스크립트는 정적
+연결만 책임진다.)
 
 사용법: python3 scripts/check_context.py  (저장소 어디서 실행해도 됨)
 """
@@ -17,14 +20,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONTEXT_DIR = ".claude/context"
 
-# ① 존재해야 하는 컨텍스트 파일 6종
+# ① 존재해야 하는 컨텍스트 파일 8종 (자동 시뮬레이션 루프 개편판)
+#    retro-lessons.md(폐기)는 새 루프 회고용 loop-lessons.md로 교체됐다.
+#    committee-personas.md는 위원회 항목에서 신설된 공유 페르소나 정의(정규위·긴급위·회고 공유).
+#    etf-universe.md는 자산군 다변화 항목에서 신설된 상시 ETF 후보 목록(위원회가 계획 합의에서 Read).
 CONTEXT_FILES = [
     "investor-profile.md",
     "trading-principles.md",
     "data-sources.md",
     "record-conventions.md",
     "market-glossary.md",
-    "retro-lessons.md",
+    "loop-lessons.md",
+    "committee-personas.md",
+    "etf-universe.md",
 ]
 
 # ② 항상 로드: CLAUDE.md 가 @임포트로 연결해야 하는 2종
@@ -32,29 +40,25 @@ ALWAYS_LOADED = {
     "CLAUDE.md": ["investor-profile.md", "trading-principles.md"],
 }
 
-# ③ Read 지시: 소비자 md → 참조해야 하는 컨텍스트 (인터뷰 파생 세부 1의 매핑)
+# ③ Read 지시: 소비자 md → 참조해야 하는 컨텍스트 (현존 소비자 강제)
+#    옛 3스킬(analyze-company·recommend-stocks·portfolio-retrospect)과 회고 전문가 4인은
+#    폐기됐다(os-docs-overhaul Q3·H2). 새 루프 스킬 4종(아침 브리핑·위원회·시뮬 엔진·주간 회고)이
+#    모두 신설돼 여기서 강제한다(루프 오케스트레이션 항목의 check_context 마감 — 예정 소비자
+#    블록을 현존 강제로 승격). 아침 브리핑용 웹검색 리서처 3종도 현존 소비자다.
 CONSUMERS = {
-    # data-sources → 웹검색 리서처 에이전트 3종
+    # data-sources → 아침 브리핑 웹검색 리서처 3종
     ".claude/agents/stock-trend-researcher.md": ["data-sources.md"],
     ".claude/agents/company-news-researcher.md": ["data-sources.md"],
     ".claude/agents/kr-macro-researcher.md": ["data-sources.md"],
-    # market-glossary → 회고 토론 전문가 4인
-    ".claude/agents/retro-technical-analyst.md": ["market-glossary.md"],
-    ".claude/agents/retro-fundamental-analyst.md": ["market-glossary.md"],
-    ".claude/agents/retro-macro-analyst.md": ["market-glossary.md"],
-    ".claude/agents/retro-skeptic.md": ["market-glossary.md"],
-    # record-conventions → 기록 남기는 스킬 3종 / retro-lessons → 분석·추천 2종
-    ".claude/skills/analyze-company/SKILL.md": ["record-conventions.md", "retro-lessons.md"],
-    ".claude/skills/recommend-stocks/SKILL.md": ["record-conventions.md", "retro-lessons.md"],
-    ".claude/skills/portfolio-retrospect/SKILL.md": ["record-conventions.md"],
-}
-
-# ④ 점진적 공개 references: SKILL.md → 자기 스킬 디렉토리의 references/ 파일
-# (최적화 — 본문의 긴 템플릿·스키마를 분리해 호출 시점에만 로드)
-REFERENCES = {
-    ".claude/skills/analyze-company/SKILL.md": ["analyze-company/references/output-template.md"],
-    ".claude/skills/recommend-stocks/SKILL.md": ["recommend-stocks/references/output-template.md"],
-    ".claude/skills/portfolio-retrospect/SKILL.md": ["portfolio-retrospect/references/output-template.md"],
+    # 새 루프 스킬 4종 (신설 완료 — 현존 강제)
+    ".claude/skills/morning-briefing/SKILL.md": ["data-sources.md", "record-conventions.md"],
+    ".claude/skills/investment-committee/SKILL.md":
+        ["record-conventions.md", "market-glossary.md", "committee-personas.md",
+         "etf-universe.md"],
+    ".claude/skills/sim-engine/SKILL.md":
+        ["record-conventions.md", "market-glossary.md", "committee-personas.md"],
+    ".claude/skills/weekly-retrospect/SKILL.md":
+        ["record-conventions.md", "loop-lessons.md", "committee-personas.md"],
 }
 
 
@@ -98,22 +102,6 @@ def main() -> int:
             ref = f"{CONTEXT_DIR}/{name}"
             check(ref in text, f"{consumer} → {ref}",
                   f"본문에 '{ref}' Read 지시가 없다")
-
-    print("④ 점진적 공개 (SKILL.md → references/ 파일 참조)")
-    for skill_md, wanted in REFERENCES.items():
-        skill_path = ROOT / skill_md
-        if not skill_path.is_file():
-            check(False, skill_md, "SKILL.md 파일이 없다")
-            continue
-        text = skill_path.read_text(encoding="utf-8")
-        for ref_rel in wanted:
-            # references 파일 존재
-            ref_path = ROOT / ".claude/skills" / ref_rel
-            check(ref_path.is_file(), f"{ref_rel} 존재", "references 파일이 없다")
-            # SKILL.md 본문이 references 경로를 참조
-            ref_token = f"references/{ref_rel.split('/')[-1]}"
-            check(ref_token in text, f"{skill_md} → {ref_token}",
-                  f"본문에 '{ref_token}' 참조가 없다")
 
     print()
     if failures:
