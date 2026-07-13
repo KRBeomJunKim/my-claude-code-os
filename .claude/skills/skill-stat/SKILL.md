@@ -3,57 +3,60 @@ name: skill-stat
 description: 지금까지 호출된 skill들의 사용 통계(호출 횟수, 마지막 호출 시각)를 보여준다. 사용자가 "skill 통계", "스킬 사용 통계", "skill-stat", "어떤 스킬을 많이 썼는지" 등을 물을 때 사용.
 ---
 
-# Skill 사용 통계
+# Skill Usage Stats
 
-`~/.claude/hooks/skill-usage-log.sh` PreToolUse hook가 skill을 호출할 때마다
-`~/.claude/skill-stats.json`에 누적한 데이터를 읽어 통계로 보여준다.
+The `.claude/hooks/skill-usage-log.sh` PreToolUse hook appends one line to
+`.claude/skill-usage.log` every time a skill is invoked. This skill aggregates that
+log and reports it as stats. **All output shown to the user must be in English.**
 
-데이터 형식:
-```json
-{
-  "commit":     { "count": 3, "last": "2026-06-25T11:23:11Z" },
-  "skill-stat": { "count": 1, "last": "2026-06-25T11:25:02Z" }
-}
+Data format — one tab-separated line per invocation, append-only:
+
+```
+2026-07-09T07:22:40Z	skill-stat
+2026-07-09T07:22:41Z	commit
+2026-07-09T07:22:42Z	orchestrate
 ```
 
-## 절차
+> Counting happens at read time, not write time. There is no JSON state file to
+> keep consistent, and the raw call history stays available.
+> **`jq` is not installed in this environment** — never reach for it here.
 
-1. **통계 데이터 읽기** — 아래 명령으로 호출 횟수 내림차순 정렬된 표 형태의 데이터를 얻는다.
+## Procedure
+
+1. **Aggregate the log** — run this as a single Bash command.
 
    ```bash
-   STATS="$HOME/.claude/skill-stats.json"
-   if [ ! -s "$STATS" ] || [ "$(jq 'length' "$STATS" 2>/dev/null)" = "0" ]; then
-     echo "아직 기록된 skill 호출이 없습니다."
+   LOG="$CLAUDE_PROJECT_DIR/.claude/skill-usage.log"
+   if [ ! -s "$LOG" ]; then
+     echo "No skill invocations recorded yet."
    else
-     jq -r '
-       to_entries
-       | sort_by(-.value.count)
-       | (map(.value.count) | add) as $total
-       | "총 호출 횟수: \($total)\n",
-         "순위  스킬                  횟수   마지막 호출",
-         "----  --------------------  -----  --------------------",
-         (to_entries[] |
-           "\(.key + 1 | tostring | (" " * (4 - length)) + .)  "
-           + (.value.key | . + (" " * (20 - (.|length))))[0:20] + "  "
-           + (.value.value.count | tostring | (" " * (5 - length)) + .) + "  "
-           + (.value.value.last // "-"))
-     ' "$STATS"
+     echo "Total invocations: $(wc -l < "$LOG" | tr -d ' ')"
+     echo
+     awk -F'\t' '{c[$2]++; last[$2]=$1} END {for (s in c) printf "%d\t%s\t%s\n", c[s], s, last[s]}' "$LOG" \
+       | sort -rn -k1,1 \
+       | awk -F'\t' 'BEGIN {printf "%-5s %-22s %6s  %s\n", "Rank", "Skill", "Count", "Last called"
+                            printf "%-5s %-22s %6s  %s\n", "----", "----------------------", "-----", "--------------------"}
+                     {printf "%-5d %-22s %6d  %s\n", NR, $2, $1, $3}'
    fi
    ```
 
-   > 위 jq의 정렬 결과를 그대로 쓰되, 정렬/포맷이 까다로우면 `jq -r 'to_entries | sort_by(-.value.count)[] | "\(.key): \(.value.count)회 (마지막 \(.value.last))"' "$STATS"` 처럼 단순하게 뽑아도 된다.
+2. **Report it in a human-readable way (in English)** — based on the output, show the user:
+   - Total cumulative invocations
+   - Per-skill count and last-called time, sorted by count (descending)
+   - A one-line summary of the top 1–3 most-used skills
 
-2. **사람이 읽기 좋게 정리해서 보고** — 출력값을 바탕으로 다음을 사용자에게 보여준다.
-   - 전체 누적 호출 횟수
-   - 호출 횟수 내림차순으로 스킬별 횟수와 마지막 호출 시각
-   - 가장 많이 쓴 스킬 1~3개를 한 줄로 요약
+3. **When there is no data** — the file is missing or empty, so the hook has never
+   recorded anything. Tell the user "No invocations recorded yet." If the hook was
+   only just registered, note that `settings.json` is read at session start, so a
+   **new session** is required before the first line appears.
 
-3. **데이터가 없을 때** — 파일이 없거나 비어 있으면, 아직 hook가 한 번도 기록하지 않은 것이다.
-   "아직 기록된 호출이 없다"고 알리고, hook가 갓 등록된 경우 `/hooks`를 한 번 열거나 재시작이 필요할 수 있음을 안내한다.
+## Notes
 
-## 참고
-
-- 통계 파일 위치: `~/.claude/skill-stats.json`
-- 기록 주체: `~/.claude/hooks/skill-usage-log.sh` (PreToolUse / matcher `Skill`)
-- 이 `skill-stat` 자신도 Skill 도구로 호출되므로 통계에 함께 집계된다.
-- 통계를 초기화하려면 `printf '{}\n' > ~/.claude/skill-stats.json` 을 실행하면 된다.
+- Log file: `.claude/skill-usage.log` (git-ignored — local usage data)
+- Written by: `.claude/hooks/skill-usage-log.sh` (PreToolUse / matcher `Skill`)
+- If the hook ever fails to parse a payload it leaves a trace in `.claude/skill-usage.err`.
+  If stats look wrong, check that file first.
+- This `skill-stat` skill is itself invoked via the Skill tool, so it is counted too.
+  The hook runs *before* the tool, so the current invocation is already in the log
+  by the time you read it.
+- To reset the stats: `rm -f "$CLAUDE_PROJECT_DIR/.claude/skill-usage.log"`
