@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: 변경된 코드를 리뷰해 버그·정확성 문제·관습 위반·개선점을 찾고, 통과/수정필요 판정을 내린다. 검증 루프의 심판 역할로, code-writer의 구현이 끝난 뒤 호출한다. feature-dev와 quick-review 두 스킬이 공유한다. 읽기 전용이며 코드를 직접 수정하지 않고 지적과 판정만 한다.
+description: 정확성·관습·테스트를 한 명이 아울러 보고 통과/수정필요를 판정하는 단일 리뷰어. quick-review 전용, 읽기 전용(지적만). feature-dev는 review-correctness·review-tests를 병렬로 쓴다.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -40,8 +40,7 @@ tools: Read, Grep, Glob, Bash
 ```
 
 ## 판정 규칙
-- 🔴 Blocking이 **하나라도 있으면 → "수정필요"**.
-- 🔴이 없으면 → **"통과"** (🟡/🟢는 남겨도 통과 가능).
+심각도(🔴/🟡/🟢)의 정의와 판정 규칙(🔴 하나라도 → "수정필요", 없으면 "통과")은 `.claude/guidelines/review-criteria.md`가 **단일 출처**다 — 그 기준대로 판정한다.
 - 매 회차 "지난 지적이 실제로 반영됐는지"도 확인한다.
 
 ## 원칙
