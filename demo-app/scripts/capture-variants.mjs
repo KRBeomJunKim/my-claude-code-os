@@ -7,15 +7,18 @@
 //   - 글자가 이미지 위에 있으면 대비는 코드로 측정 불가 → AI 눈으로 넘긴다.
 //
 // 사용법: node scripts/capture-variants.mjs [target] [baseURL]
-//   target  기본값: card   (레지스트리 키 — /gallery?c=<target> 로 연다)
-//   baseURL 기본값: http://localhost:5173
+//   target  기본값: card   (레지스트리 키 — variantRoute 로 연다)
+//   baseURL 기본값: .claude/visual.config.json 의 baseUrl (없으면 http://localhost:5173)
+// 무대(URL) 종속은 config seam 으로 뺐다 — OS.md "이식성" 참조.
 // 산출물: screenshots/<target>/<id>.png, screenshots/<target>/measurements.json
 import { chromium } from 'playwright'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { loadVisualConfig, variantUrl } from '../../.claude/scripts/visual-config.mjs'
 
+const cfg = await loadVisualConfig()
 const target = process.argv[2] || 'card'
-const baseURL = process.argv[3] || 'http://localhost:5173'
-const url = `${baseURL}/gallery?c=${target}`
+const baseURL = process.argv[3] || cfg.baseUrl
+const url = variantUrl(cfg, baseURL, target)
 const outDir = `screenshots/${target}`
 await mkdir(outDir, { recursive: true })
 
@@ -52,11 +55,24 @@ function contrast(fg, bg, fgOpacity = 1) {
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 900, height: 700 }, deviceScaleFactor: 1 })
-await page.goto(url, { waitUntil: 'networkidle' })
+try {
+  await page.goto(url, { waitUntil: 'networkidle', timeout: 15_000 })
+} catch (e) {
+  await browser.close()
+  console.error(`${url} 접속 실패 — dev 서버가 떠 있나? (npm run dev)\n원인: ${e.message}`)
+  process.exit(1)
+}
 
 const ids = await page.$$eval('[data-variant-id]', (els) =>
   els.map((e) => e.getAttribute('data-variant-id')),
 )
+if (ids.length === 0) {
+  await browser.close()
+  console.error(
+    `변형 0개: ${url} 에 [data-variant-id] 가 없다 — 대상 키 "${target}" 가 레지스트리에 등록됐는지 확인 (visual-list / visual-add).`,
+  )
+  process.exit(1)
+}
 
 const measurements = []
 for (const id of ids) {
