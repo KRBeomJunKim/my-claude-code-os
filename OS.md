@@ -26,13 +26,13 @@ my-claude-code-os/
     │   ├── code-conventions.md          # 코드 스타일, 네이밍, 패턴 규칙
     │   └── project-domain-detection.md  # 프로젝트 도메인 파악 절차
     ├── skills/            # 스킬 (재사용 가능한 작업 단위)
-    │   ├── interview/     # 모호함 구체화 인터뷰 (기획/기술 모드, 독립 실행)
     │   ├── ticket-start/  # 티켓 시작 워크플로
     │   ├── task-impl/     # 개발 단위 분해 + 구현 + 커밋 루프
-    │   ├── dev-test/      # 테스트 루프 + 자동 수정 + 코드 리뷰
+    │   ├── dev-test/      # 테스트 루프 + 자동 수정
     │   ├── dev-pr/      # 리뷰 루프 + 자동 수정 + PR 생성
     │   ├── dev-loop/      # dev-test → dev-pr 오케스트레이터
-    │   ├── deploy-notify/ # 배포 완료 알림
+    │   ├── retrospect/    # 티켓 회고 — 가정 검증 + 규칙 승격 (리포트는 docs/retrospects/ 누적)
+    │   ├── deploy-notify/ # 파이프라인 단계 관찰 알림
     │   ├── auto-commit/   # 커밋 자동화 (구현 완료)
     │   └── skill-stats/   # 스킬 사용 통계 (구현 완료)
     ├── skill_calls.log    # 스킬 호출 이력
@@ -64,34 +64,6 @@ my-claude-code-os/
 ---
 
 ## 자동화 대상 워크플로
-
-### 0. 모호함 구체화 인터뷰 — `/interview`
-
-**문제:** 아이디어나 요구사항이 모호한 상태로 개발을 시작하면 중간에 재작업이 발생함. 파이프라인 자동 트리거가 아니라, 필요할 때 직접 불러 쓰는 독립 도구가 필요함
-
-**목표:** 주제 하나 주면 기획/기술 관점 질문으로 모호함을 구체화
-
-```
-input:  주제/아이디어 설명 (생략 시 docs/ticket-briefing.md 또는 직접 질문)
-          ↓
-        모드 선택 (기획만 | 기술만 | 둘 다)
-          ↓
-        용어 정의 (공통, 항상 실행)
-          ↓
-        [기획 모드] 목표 / 범위 / 정책·규칙 / UX 흐름 / 제약
-        [기술 모드] 인터페이스 / 재사용 / 동작 정의 / 소유권 / 제약 / 검증 방법
-          ↓
-        결정으로 변환 (공통) — 확정된 결정 / 미해결 질문 / 가정 / 다음 액션
-          ↓
-output: docs/interview-spec.md 저장
-        + 기획 위주면 /ticket-start, 구현 범위 명확하면 /task-impl로 안내
-```
-
-**구현 완료:**
-
-- [x] `interview` 스킬 구현 (독립 실행, 기획/기술 모드 분기 + 결정 변환 단계)
-
----
 
 ### 1. 티켓 시작 워크플로 — `/ticket-start`
 
@@ -149,10 +121,14 @@ input:  ticket-start의 작업 브리핑
         태스크 목록 출력 + 사용자 확인
         (수정 / 추가 / 순서 변경 기회 제공)
           ↓
-        [태스크 루프]
-        태스크 1 → 구현 → 변경사항 검토 → auto-commit
-        태스크 2 → 구현 → 변경사항 검토 → auto-commit
-        ...
+        태스크 목록을 docs/tasks.md에 저장 (진행 상태의 단일 원본)
+          ↓
+        [태스크 루프 — 규모에 따라 선택]
+        직접 실행: 태스크 1 → 구현 → 검토 → auto-commit → 태스크 2 → ...
+        위임 모드: 독립 태스크들을 병렬 에이전트로 실행
+        랄프 모드: /loop /task-impl 랄프 반복 — 반복마다 새 컨텍스트에서
+                   tasks.md 읽기 → 태스크 하나 구현·커밋·체크 → 종료,
+                   전부 완료 시 DONE 출력으로 루프 정지
           ↓
 output: 모든 태스크 커밋 완료
         + 커밋 이력 요약 (태스크 ↔ 커밋 SHA 매핑)
@@ -166,6 +142,8 @@ output: 모든 태스크 커밋 완료
 - [x] 사용자 확인 단계 설계 (수정/추가/순서 변경 허용)
 - [x] 태스크별 구현 → auto-commit 루프 (직접 실행 + 에이전트 위임 모드)
 - [x] 커밋 이력 요약 포맷 정의 (SHA 매핑 테이블)
+- [x] `docs/tasks.md` 영속화 — 체크박스 + SHA + 메모(가정/이탈/보류만) 포맷
+- [x] 랄프 모드 — 외부 루프(/loop) 기반 반복 실행, 질문 대신 가정 기록/보류 규칙, DONE/BLOCKED 정지 신호
 
 ---
 
@@ -182,15 +160,14 @@ input:  /dev-test (개발 완료 후 호출)
         테스트 실행 (static-code-tester 에이전트)
         + Playwright QA (qa-checklist.md 기반 또는 diff 기반 스모크)
           ↓
-        실패 시: 자동 수정 → 커밋 → 재실행 (최대 3회 루프)
+        실패 시: 자동 수정 → 커밋 → 재실행 (최대 3회 루프,
+        재실행은 실패 항목만 → 통과 시 전체 1회 최종 검증)
           ↓
-        통과 후: code-reviewer 에이전트로 코드 리뷰 (단발, 수정 없음)
-          ↓
-output: 테스트 결과 + 리뷰 이슈 목록 출력
-        "이슈를 수정하려면 /dev-pr을 실행하세요" 안내
+output: 테스트 결과 출력
+        "코드 리뷰와 PR 생성은 /dev-pr을 실행하세요" 안내
 
 [Phase 2] /dev-pr
-input:  /dev-pr (리뷰 이슈 수정 후 호출)
+input:  /dev-pr (테스트 통과 후 호출)
           ↓
         code-reviewer 에이전트로 새 리뷰 (항상 fresh 실행)
           ↓
@@ -204,11 +181,12 @@ output: PR 생성 (브랜치 push + gh pr create)
 
 [오케스트레이터] /dev-loop
         /dev-test → 성공 시 → /dev-pr 순서 실행
+        (리뷰는 어차피 dev-pr에서 반드시 거치므로 dev-test에서는 빼고 테스트에만 집중)
 ```
 
 **구현 완료:**
 
-- [x] `/dev-test` 스킬 — 테스트 루프 + code-reviewer 단발 리뷰
+- [x] `/dev-test` 스킬 — 테스트 루프 (코드 리뷰는 dev-pr로 이관)
 - [x] `/dev-pr` 스킬 — code-reviewer 루프 + PR 생성
 - [x] `/dev-loop` 오케스트레이터 — dev-test → dev-pr 순차 호출
 - [x] 테스트 실행 명령어 감지 로직 (package.json / Makefile 등)
@@ -216,29 +194,69 @@ output: PR 생성 (브랜치 push + gh pr create)
 
 ---
 
+### 2.5. 회고 — `/retrospect`
+
+**문제:** 티켓이 끝나도 가정 검증·반복 실수 정리가 안 됨. 랄프 모드의 가정 메모는 DONE 후 아무도 확인하지 않고, 리뷰 지적은 저장되지 않아 티켓마다 같은 지적이 반복됨
+
+**목표:** 티켓 산출물을 모아 가정을 검증하고, 반복 패턴을 규칙으로 승격
+
+```
+input:  /dev-pr 완료 시 자동 호출 | /retrospect 수동 실행
+          ↓
+        재료 수집 (있는 것만)
+        - docs/tasks.md 메모 (가정/이탈/보류)
+        - docs/ticket-briefing.md, docs/interview-spec.md
+        - .claude/qa-report.md, .claude/review-report.md
+        - docs/retrospects/ 이전 리포트 (반복 패턴 비교 대상)
+          ↓
+        분석
+        - 가정 검증: 사용자에게 맞았는지 확인 (AskUserQuestion)
+        - 보류/이탈 정리: 사람 판단 필요 목록
+        - 반복 패턴 탐지: 이슈 유형 누적 2회 이상 → 규칙 승격 후보
+          ↓
+        규칙 승격 제안 (후보 있을 때만)
+        - 코드 관련 → code-conventions.md / 행동 관련 → CLAUDE.md
+        - 사용자 승인 후에만 append
+          ↓
+output: docs/retrospects/YYYY-MM-DD-<브랜치>.md 저장 (누적)
+        + 다음 액션 목록 (틀린 가정 후속 조치 등)
+```
+
+**구현 완료:**
+
+- [x] `retrospect` 스킬 구현 (재료 수집 → 가정 검증 → 리포트 누적 저장 → 규칙 승격 제안)
+- [x] `dev-pr` v1.1 — 리뷰 결과 `.claude/review-report.md` 영속화 + PR 생성 후 retrospect 자동 호출
+
+---
+
 ### 3. 배포 알림 워크플로 — `/deploy-notify`
 
-**문제:** 배포하고 나서 Slack에 "배포됐어요" 메시지 치고, Notion 티켓 상태 바꾸는 게 귀찮음
+**문제:** CodePipeline이 Build → Approval → Deploy로 넘어가는 동안 콘솔을 계속 들여다보고 있어야 함
 
-**목표:** `/deploy-notify` 한 번으로
+**목표:** `/deploy-notify` 한 번 실행하면 알아서 루프를 돌며 N분마다 현재 파이프라인 단계를 알림 (Slack/Notion 업데이트는 범위 밖)
 
 ```
-input:  /deploy-notify (또는 배포 명령 감지 훅)
+input:  /deploy-notify (파이프라인 이름 지정, 주기 N분 — 기본 3분)
           ↓
-        현재 브랜치 / PR 정보 수집
+        스킬 내부에서 /loop Nm 자동 시작
           ↓
-        연결된 Notion 티켓 조회
+        aws codepipeline get-pipeline-state 주기 조회
           ↓
-output: Slack 배포 완료 메시지 전송
-        + Notion 티켓 상태 "완료" 업데이트
+output: PushNotification으로 현재 단계 알림 (매 주기마다)
 ```
 
-**구현 필요 사항:**
+**구현 완료:**
 
-- [ ] Slack MCP 연동 확인
-- [ ] 배포 채널 / 메시지 포맷 정의
-- [ ] Notion 티켓 ↔ PR 연결 규칙 정의 (브랜치 이름 규칙 등)
-- [ ] (옵션) 배포 명령어 감지 훅 설정
+- [x] AWS CLI 인증 확인 (`codepipeline:GetPipelineState` 권한) — 사전 검증 1단계에서 단일 호출로 확인
+- [x] 파이프라인 이름 / 알림 주기(N분) 지정 방식 정의 — `/deploy-notify <이름> [N분]` 인자
+- [x] 스킬 실행 시 `/loop` 자동 트리거 — Skill 도구로 `loop`를 직접 호출 (task-impl 랄프 모드의 "안내만 출력하고 종료" 방식과 다르게, 조회 전용이라 자동 시작이 안전하다고 판단)
+- [x] 파이프라인 종료(성공/실패) 감지 시 루프 자동 종료 조건 — 관찰 반복마다 스테이지 상태 판정 후 종료 상태면 `DONE` 출력
+
+**한계 (의도적으로 감수):**
+
+- 세션(터미널)이 열려 있는 동안만 동작 — 상시 인프라 아님
+- N분 간격 폴링이라 그만큼 지연 있음
+- 실행한 사람에게만 알림
 
 ---
 
@@ -247,7 +265,6 @@ output: Slack 배포 완료 메시지 전송
 | 단계     | 내용                                                                                                            | 상태    |
 | -------- | --------------------------------------------------------------------------------------------------------------- | ------- |
 | Step 0   | 기본 인프라 (settings.json, auto-commit, skill-stats)                                                           | ✅ 완료 |
-| Step 0.5 | `/interview` 스킬 구현 (모호함 구체화, 기획/기술 모드 분기)                                                     | ✅ 완료 |
 | Step 1   | `/ticket-start` 스킬 구현                                                                                       | ✅ 완료 |
 | Step 1.5 | `/task-impl` 스킬 구현 (태스크 분해 + 구현 루프 + 단위 커밋)                                                    | ✅ 완료 |
 | Step 2   | `/dev-loop` 스킬 구현 (셀프 리뷰, 테스트, 커밋, PR 자동화)                                                      | ✅ 완료 |
@@ -256,10 +273,27 @@ output: Slack 배포 완료 메시지 전송
 | Step 2.7 | `ticket-start` QA 체크리스트 생성 — 기획서 시나리오 → Playwright 실행 가능 포맷으로 `docs/qa-checklist.md` 저장 | ✅ 완료 |
 | Step 2.8 | `dev-loop` Playwright QA 실행 — `docs/qa-checklist.md` 기반 체크리스트 순회 + PR 본문 자동 반영                 | ✅ 완료 |
 | Step 2.9 | `/dev-loop` 분리 — `/dev-test`(테스트+리뷰) + `/dev-pr`(리뷰루프+PR) + `/dev-loop`(오케스트레이터)            | ✅ 완료 |
-| Step 3   | `/deploy-notify` 스킬 구현                                                                                      | 🔲 예정 |
+| Step 2.10 | `task-impl` 랄프 모드 — `docs/tasks.md` 영속화 + 외부 루프(/loop) 반복 실행                                    | ✅ 완료 |
+| Step 2.11 | `/dev-test` 코드 리뷰 단계 제거 — 어차피 `/dev-pr`에서 반드시 리뷰하므로 `dev-test`는 테스트 통과에만 집중       | ✅ 완료 |
+| Step 3   | `/deploy-notify` 스킬 구현 (실행 시 자동 `/loop` 관찰 + N분마다 단계 알림)                                      | ✅ 완료 |
 | Step 4   | 배포 명령 감지 훅 자동화                                                                                        | 🔲 예정 |
 | Step 5   | Memory 시스템 구축                                                                                              | 🔲 예정 |
 | Step 6   | CLAUDE.md 고도화 (페르소나, 금지사항 정교화)                                                                    | 🔲 예정 |
+
+---
+
+## 목표 지표 (프로젝트별 루브릭)
+
+**원칙:** 루브릭 기준은 여기(OS.md)에 한 번만 정의한다. 채점은 각 프로젝트에 배포된 스킬(`retrospect`, `skill-stats`)이 **그 프로젝트의 로컬 파일**(`.claude/skill_calls.log`, `docs/tasks.md`, `.claude/review-report.md`, `docs/retrospects/`)만 읽어서 수행한다. 여러 프로젝트를 이 레포로 모아 보는 중앙 집계는 하지 않는다 — 필요해지면 그때 추가.
+
+| 지표 | 측정 소스 (프로젝트 로컬) | 상 (3점) | 중 (2점) | 하 (1점) |
+|---|---|---|---|---|
+| 자동화 커버리지 | `.claude/skill_calls.log` 호출 빈도 | 로드맵 스킬의 80%+ 최근 30일 내 1회 이상 호출 | 50~79% | 50% 미만 |
+| 개입 빈도 | `docs/tasks.md`의 가정/이탈/보류 메모 개수 | 티켓당 평균 2회 이하 | 3~5회 | 6회 이상 |
+| 재작업률 | `.claude/review-report.md` CRITICAL 재시도 횟수 | 평균 1회 이하 | 2회 | 3회 이상 |
+| 반복 실수 감소 | `docs/retrospects/*.md` 신규 반복 패턴 승격 건수 | 티켓당 0건 | 1건 | 2건 이상 |
+
+**채점 시점:** `retrospect` 스킬 실행 시 함께 채점해 `docs/retrospects/scorecard.md`에 누적. 별도 주기(월간 등)를 두지 않는다 — 새 트리거를 만들면 그 자체가 유지보수 대상이 됨.
 
 ---
 
