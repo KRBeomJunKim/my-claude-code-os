@@ -32,6 +32,7 @@
 | `/remind-when` | remind 자동 알럿이 **몇 시에 실행되는지** crontab에서 조회 | 예: `매일 오후 5시 (17:00)` |
 | `/list [상태] [키워드]` | 저장된 할일을 모두 조회해 상태별로 정리·표시. 상태·키워드로 필터링 가능 | 상태별 그룹으로 전체 표시 / 키워드·상태 필터 |
 | `/skills` | 이 프로젝트에 등록된 스킬을 모두 스캔해 이름·설명·호출 방식과 함께 표시 | 등록된 스킬 카탈로그 한눈에 |
+| `/usage` | 스킬 호출 로그(`skill-invocations.log`)를 분석해 자주 쓰는 스킬·이어 부른 연쇄·유휴 스킬을 표시 | 자기 관찰 루프의 read 절반 (write는 log-skill-invocation 훅) |
 | `/sync-readme` | 실제 `.claude/` 상태(스킬·에이전트·디렉터리)를 스캔해 **이 README를 최신화** | 스킬 추가/삭제 후 문서 자동 동기화 |
 | `/sync-test` | 실제 상태(스킬·훅·데이터 파일)를 스캔해 `tests/` 테스트 커버리지를 최신화 | 스킬·훅 변경 후 tests/ 커버리지 동기화 |
 
@@ -82,9 +83,11 @@
 | Telegram | `_shared/telegram-agent.md` | 알럿 메시지를 텔레그램으로 발송 | remind (발송 채널 교체 지점) |
 | Interviewer | `plan/_interviewer.md` | 할일 구체화 인터뷰 | plan 전용 |
 | Alert | `remind/_alert.md` | 리마인더 메시지 생성 (2일 이상 방치 항목 강조) | remind 전용 |
+| README Sync | `_shared/readme-sync-agent.md` | 파일시스템 스캔+비교+갱신을 한 창에서 통합 수행 | sync-readme 전용 (단순 전사라 통합) |
+| State-Sync Writer | `_shared/state-sync-writer.md` | 받은 사실에 맞춰 대상 문서/테스트를 최소 diff로 갱신 | sync-test (수집·작성 분리 유지) |
 
 > **공유(`_shared`) vs 로컬 에이전트**
-> `Classifier`·`Telegram`처럼 여러 곳에서 공통으로 쓰거나 교체 지점이 되는 일꾼은 `_shared/`에 두어 중복 없이 재사용하고,
+> `Classifier`·`Telegram`·`README Sync`·`State-Sync Writer`처럼 여러 곳에서 공통으로 쓰거나 교체 지점이 되는 일꾼은 `_shared/`에 두어 중복 없이 재사용하고,
 > `Interviewer`·`Alert`처럼 한 스킬에서만 쓰는 일꾼은 해당 스킬 폴더 안에 둔다.
 > 덕분에 알림 채널을 슬랙·이메일로 바꿔도 `telegram-agent.md`만 교체하면 되고, 분류 로직을 바꿔도 `classifier-agent.md`만 교체하면 된다.
 
@@ -101,10 +104,14 @@
 | remind-cron | `hooks/remind-cron.sh` | crontab 매일 17:00 (세션 외부) | `claude -p "/remind"` 실행 → 미처리 draft를 텔레그램으로 알럿 |
 | telegram-listener | `hooks/telegram-listener.sh` | launchd 상시 데몬 + long poll (세션 외부) | 폰에서 봇에 보낸 `/capture` 등 슬래시 명령을 거의 실시간으로 받아 `claude -p`로 실행 → 결과를 폰으로 회신 |
 | restart-listener-on-change | `hooks/restart-listener-on-change.sh` | Claude Code `PostToolUse` 이벤트 (세션 내부, telegram-listener.sh 수정 시) | 파일 변경 시 `launchctl kickstart -k`로 launchd 데몬 즉시 재시작 → 화이트리스트 변경 반영 |
+| log-skill-invocation | `hooks/log-skill-invocation.sh` | Claude Code `PostToolUse` 이벤트 (세션 내부, matcher `Skill`) | Skill 툴로 스킬을 실행할 때마다 호출 사실을 `skill-invocations.log`에 한 줄 append → `/usage`가 읽는 자기 관찰 로그의 write 쪽 |
+| flush-cron | `hooks/flush-cron.sh` | crontab 15분마다 (세션 외부) | `capture-flush.sh`를 주기 구동해 `data/outbox/`에 남은 미동기 항목을 재전송 → "모두 동기됨" 상태로 수렴시키는 조정 루프 (outbox 비었으면 무소음) |
+| watchdog-cron | `hooks/watchdog-cron.sh` | crontab 10분마다 (세션 외부) | `telegram-listener` 데몬 헬스를 확인해 다운 감지 시 ① 폰 알림 ② 자동 재시작 시도. 상태 전이(healthy↔down)에서만 알림 (디바운스) |
+| digest-cron | `hooks/digest-cron.sh` | crontab 매주 일요일 20:00 (세션 외부) | `digest-report.sh`로 할일 현황(상태 분포·카테고리·방치 draft)을 요약해 폰으로 발송 → 주 1회 회고용 집계 |
 
 > **세션 내부 훅 vs 외부 스케줄 훅**
 > `detect-todo`·`restart-listener-on-change`는 Claude Code의 **네이티브 훅**이다. 대화 세션 안에서 사용자가 입력하거나 파일을 수정하는 순간 끼어들어 동작한다.
-> `remind-cron`·`telegram-listener`는 **세션 밖에서 자동으로 실행**된다. `remind-cron`은 crontab이 매일 17:00에 띄우고, `telegram-listener`는 launchd 데몬이 상시 실행되며 폰의 메시지를 long poll로 대기한다. 터미널을 보고 있지 않아도 자동으로 돈다 (맥이 켜져 있어야 함).
+> `remind-cron`·`flush-cron`·`watchdog-cron`·`digest-cron`·`telegram-listener`는 **세션 밖에서 자동으로 실행**된다. cron 스케줄 훅들은 crontab이 정해진 시각에 띄우고(remind 매일 17:00 · flush 15분마다 · watchdog 10분마다 · digest 매주 일요일 20:00), `telegram-listener`는 launchd 데몬이 상시 실행되며 폰의 메시지를 long poll로 대기한다. 터미널을 보고 있지 않아도 자동으로 돈다 (맥이 켜져 있어야 함).
 > 한 줄 요약: **세션 내 훅은 "내가 칠 때 돕고", 외부 훅은 "내가 없을 때 일한다".**
 
 > 🔒 **인바운드 보안**: `telegram-listener`는 사실상 텔레그램 메시지로 로컬 `claude`를 실행시키는 통로다. 그래서 ① 내 `chat_id`가 보낸 메시지만 처리(화이트리스트), ② 미리 등록한 슬래시 명령(`/capture`)만 실행, ③ 사용자 텍스트를 셸로 재평가하지 않음(eval 미사용) — 3종 안전장치를 둔다.
@@ -114,8 +121,15 @@
 ```
 .claude/
 ├── OS.md                          # 시스템 설계 문서 (원칙·흐름·스키마)
+├── settings.json                  # 공유 hooks 배선 (SessionStart·UserPromptSubmit·PostToolUse)
+├── skill-invocations.log          # 스킬 호출 로그 (런타임, git 제외 — log-skill-invocation 훅이 append)
+├── githooks/                      # git core.hooksPath로 연결하는 커밋 게이트
+│   ├── pre-commit                 # 커밋 직전 결정적 테스트(L1+L2) 실행 → 정본 드리프트 차단
+│   ├── install.sh                 # core.hooksPath를 .claude/githooks로 설정
+│   └── uninstall.sh               # 위 설치 되돌리기
 ├── launchd/
-│   └── com.joy.telegram-listener.plist  # launchd 설정: telegram-listener 상시 실행 + 자동 재시작
+│   ├── install.sh                 # 세션 밖 자동화 설치: 현재 clone 경로/사용자명으로 plist·crontab 생성
+│   └── uninstall.sh               # 위 설치 되돌리기 (데몬 언로드·plist 삭제·crontab 정리)
 ├── skills/
 │   ├── capture/SKILL.md           # /capture 오케스트레이터
 │   ├── done/SKILL.md              # /done 오케스트레이터
@@ -128,23 +142,37 @@
 │   │   └── _alert.md              # 알럿 메시지 에이전트 (로컬)
 │   ├── remind-when/SKILL.md       # /remind-when (crontab 시각 조회)
 │   ├── skills/SKILL.md            # /skills 오케스트레이터 (스킬 카탈로그)
+│   ├── usage/SKILL.md             # /usage (스킬 호출 로그 분석 — 자기 관찰 루프의 read)
 │   ├── sync-readme/SKILL.md       # /sync-readme (실제 상태 스캔 → README 갱신)
 │   ├── sync-test/SKILL.md         # /sync-test (실제 상태 스캔 → tests/ 커버리지 동기화)
 │   └── _shared/
 │       ├── classifier-agent.md    # 카테고리 분류 에이전트 (공유)
 │       ├── list-view.sh           # 할일 목록 조회·표시 단일 소스 (공유)
 │       ├── notion.sh              # Notion DB 직접 호출 헬퍼 (공유, 결정론 스크립트)
-│       └── telegram-agent.md      # 알럿 발송 에이전트 (공유)
+│       ├── digest-report.sh       # 할일 현황 요약 텍스트 생성 스크립트 (공유, 결정론 — digest-cron용)
+│       ├── readme-sync-agent.md   # README 스캔+갱신 통합 에이전트 (sync-readme 전용)
+│       ├── state-sync-writer.md   # 정본 동기화 작가 (공유, sync-test 갱신 단계)
+│       ├── telegram-agent.md      # 알럿 발송 에이전트 (공유)
+│       ├── telegram-send.sh       # 텔레그램 메시지 발송 공용 sender (공유, cron 루프용)
+│       └── usage-report.sh        # 스킬 호출 로그 집계 스크립트 (공유, /usage용)
 ├── hooks/
 │   ├── detect-todo.js             # UserPromptSubmit 훅: 자연어 할일 감지 → /capture 제안 힌트
 │   ├── remind-cron.sh             # crontab(매일 17:00)이 호출하는 /remind 실행 스크립트
+│   ├── flush-cron.sh              # crontab(15분마다): outbox 미동기 항목 재전송 조정 루프
+│   ├── watchdog-cron.sh           # crontab(10분마다): telegram-listener 데몬 감시·자동 재시작
+│   ├── digest-cron.sh             # crontab(매주 일요일 20:00): 할일 현황 주간 집계 발송
 │   ├── telegram-listener.sh       # launchd 상시 데몬: 폰의 슬래시 명령 long poll → claude -p 실행 → 회신
-│   └── restart-listener-on-change.sh  # PostToolUse 훅: telegram-listener.sh 수정 시 데몬 재시작
+│   ├── restart-listener-on-change.sh  # PostToolUse 훅: telegram-listener.sh 수정 시 데몬 재시작
+│   └── log-skill-invocation.sh    # PostToolUse 훅(matcher Skill): 스킬 호출을 skill-invocations.log에 기록
 └── data/
     ├── notion.json                # Notion 토큰·DB ID (비밀값, git 제외)
     ├── telegram.json              # 텔레그램 봇 토큰·chat_id (비밀값, git 제외)
     ├── telegram-offset.txt        # 텔레그램 폴링 오프셋 (런타임 상태, git 제외)
-    └── telegram-listener.log      # 텔레그램 리스너 로그 (런타임 로그, git 제외)
+    ├── telegram-listener.log      # 텔레그램 리스너 로그 (런타임 로그, git 제외)
+    ├── watchdog-state.txt         # watchdog 직전 상태(healthy/down) 기억 (런타임 상태, git 제외)
+    ├── watchdog.log               # watchdog-cron 로그 (런타임 로그, git 제외)
+    ├── flush-cron.log             # flush-cron 로그 (런타임 로그, git 제외)
+    └── digest-cron.log            # digest-cron 로그 (런타임 로그, git 제외)
 ```
 
 ## 저장소: Notion 연동
@@ -154,12 +182,22 @@
 - 자격증명은 `.claude/data/notion.json`(토큰·DB ID)에서 읽으며, 이 파일은 `.gitignore`로 커밋에서 제외된다.
 - 스킬·오케스트레이터는 저장소 종류를 모른다. 저장 방식이 바뀌어도 `notion.sh` 스크립트만 교체하면 되도록 설계되어 있다. (실제로 로컬 JSON Mock → Notion API 전환을 스킬 수정 없이 완료)
 
-## 자동 리마인더 등록
+## 세션 밖 자동화 설치 (clone 후 1회)
 
-`/remind`를 매일 저녁 자동 실행하려면 스케줄을 등록한다.
+`telegram-listener`(launchd 상시 데몬)와 cron 스케줄 훅들(`remind`·`flush`·`watchdog`·`digest`)은
+세션 밖에서 도는 자동화라 **각 PC에 등록**이 필요하다. launchd·crontab은 모두
+절대경로를 요구(상대경로 미지원)하므로, 경로를 레포에 박지 않고 **설치 스크립트가
+현재 clone 위치와 로그인 사용자명을 채워 넣는** 방식으로 이식성을 확보한다.
 
+```bash
+# 저장소를 clone 받은 뒤, 프로젝트 루트에서 1회 실행
+.claude/launchd/install.sh     # plist를 ~/Library/LaunchAgents에 생성·로드 + crontab 등록
 ```
-/schedule "/remind" 매일 17:00
-```
+
+- `install.sh`는 현재 경로(`$(pwd)`)와 사용자명(`id -un`)으로 `com.<user>.telegram-listener`
+  plist를 만들어 로드하고, cron 4종을 crontab에 등록한다: `remind`(매일 17:00) · `flush`(15분마다)
+  · `watchdog`(10분마다) · `digest`(매주 일요일 20:00). 여러 번 실행해도 안전(멱등).
+- 데몬이 실제로 동작하려면 `.claude/data/telegram.json`(봇 토큰·내 chat_id)이 있어야 한다.
+- 되돌리려면 `.claude/launchd/uninstall.sh`.
 
 알럿은 텔레그램으로 발송되며, 2일 이상 방치된 항목은 `⚠️` 강조로 별도 표시된다.

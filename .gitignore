@@ -18,3 +18,15 @@
 .claude/data/telegram-listener.log
 # (구) cron 폴링 시절 락 — long poll 데몬 전환으로 더는 생성 안 됨
 .claude/data/.telegram-listener.lock
+
+# 할일 런타임 데이터 (사용자 개인 데이터·로컬 캐시 — 커밋 금지)
+.claude/data/tasks.json
+.claude/data/clarified-specs.json
+.claude/data/cache/
+.claude/data/outbox/
+
+# 시스템 루프 런타임 상태·로그 (로컬 전용 — 커밋 금지)
+.claude/data/watchdog-state.txt
+.claude/data/watchdog.log
+.claude/data/flush-cron.log
+.claude/data/digest-cron.log

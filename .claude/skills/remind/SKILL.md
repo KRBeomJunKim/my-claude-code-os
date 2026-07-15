@@ -9,6 +9,13 @@ allowed-tools: Read Bash Agent
 
 매일 저녁 Cron이 호출하는 알럿 스킬. draft 항목이 있을 때만 사용자에게 알린다.
 
+> **참조 정본**: 이 스킬은 아래 정본을 따른다. 관련 판단 시 먼저 Read한다.
+> - `.claude/context/status-lifecycle.md` — remind는 전이 없이 `draft`만 알림 대상으로 삼는다
+> - `.claude/context/data-model.md` — 조회하는 draft 항목 스키마
+>
+> `.claude/context/security.md`(텔레그램 자격증명·토큰 취급)는 CLAUDE.md로 **상시 주입**되므로
+> 별도 Read 없이 이미 컨텍스트에 있다.
+
 ## 사용법
 
 ```
