@@ -1,0 +1,70 @@
+{
+  "slug": "liveedit_2606.26740",
+  "iteration": 1,
+  "total": 97,
+  "threshold": 96,
+  "verdict": "PASS",
+  "criteria": {
+    "functional_reproduction": {
+      "score": 24,
+      "max": 25,
+      "notes": "핵심 알고리즘(AR-지향 마스크 캐시)이 실제 계산으로 구현됨. le2 편집기: computeRaw()가 타일별 L2²(ePrev-sPrev) 실측 → normArr('minmax')로 (diff-min)/(max-min+1e-8) 정규화 → kthTau()가 kthvalue 상위30% keep 임계 산출 → streamRun()에서 imp[t]>=tau 면 editTile 재계산, imp[t]<tau 면 copyTile 캐시 재사용. 처리시간은 performance.now()로 실측(baseFullMs/emaMs), FPS·speedup·prune% 실산출. 컨트롤(τ·캐시 ON/OFF·min-max↔rank·KV window/sink)이 실측 지표를 실제로 바꿈(하드코딩·애니메이션 아님). lebench 마이크로벤치도 timePath()로 24프레임 벽시계 측정. 확산 백본만 경량 stand-in(3×3 필터+teal 리컬러)으로 대체·라벨. 감점 -1: 실제 '편집' 출력은 확산이 아닌 리컬러 stand-in(구조적으로 불가피, 정직 라벨됨)."
+    },
+    "repo_fidelity": {
+      "score": 20,
+      "max": 20,
+      "notes": "공식 저장소 github.com/cp-cp/LiveEdit 소스를 WebFetch로 직접 대조. configs/wan_mm-token-pruning.yaml 실측: denoising_step_list [1000,750,500,250]·num_frame_per_block 3·num_frames 81·adaptive_patch_ratio 0.3·internal_pruning_layers ['self_attn']·internal_pruning_steps [1,2]·guidance_scale 3.0·timestep_shift 5.0·image_or_video_shape [1,21,16,60,104]·warp_denoising_step true·unpruned_fill_strategy 'prev_step'·v2v true — 앱 값과 전부 일치. pipeline/causal_inference.py의 _compute_mask_from_generated/_compute_mask_from_importance 실측: diff=(gen-src).pow(2).mean(dim=2), importance=(diff-min)/(max-min+1e-8), keep_num=int(num_tokens*adaptive_patch_ratio), threshold=torch.kthvalue(num_tokens-keep_num+1) — 앱의 computeRaw/normArr/kthTau 식과 정확히 일치. 출처 귀속 정확: 12.66 FPS·79 ms는 레포 미기재 → [논문 보고값] 라벨만, code attribution 없음. lr 1e-5/batch8은 §8 논문 라벨(레포 config는 lr 2e-6/total_batch 8)."
+    },
+    "method_fidelity": {
+      "score": 14,
+      "max": 15,
+      "notes": "3단계 증류(Foundation MSE→Teacher Forcing causal mask→DMD 4-step), chunk-wise causal attention, 마스크 캐시 Self-Attn 한정, KV 캐시 sink+롤링 eviction, chunk=3 인과 스트리밍 등 논문 파이프라인 단계가 개념적으로 정확히 반영. le2가 편집강도 L2로 편집/정적 이진분리 후 정적영역 재사용하는 흐름이 §4B와 일치. 감점 -1: DMD Real/Fake score, teacher-forcing 학습은 시각/설명 수준(추론 편집만 실계산)."
+    },
+    "metric_fidelity": {
+      "score": 14,
+      "max": 15,
+      "notes": "VBench 6지표 앱 값이 정본 §6과 정확히 일치: TA 0.270·BC 0.956·MS 0.992·DD 0.256·AQ 0.581·IQ 0.708. user study 95.8%(n=20)·12.66 FPS·79 ms·81 frames/7.89 s·39K(9K+20K+10K) steps 모두 일치·[논문 보고값] 라벨. 실측 prune%/ms/speedup을 논문값과 나란히 표시. 감점 -1: baseline(LucyEdit/InsV2V 등) 개별 VBench 수치는 논문 미보고라 비교막대 없음(정직 처리, 단 대비 폭 제한)."
+    },
+    "runnability": {
+      "score": 15,
+      "max": 15,
+      "notes": "단일 index.html 자급식. 외부 리소스 로더(src(non-data)/fetch/XHR/WebSocket/@import/<link>/cdn/url(http)/importScripts/integrity) 정규식 스캔 0건. http(s) 등장은 arXiv·프로젝트·github×2 앵커(target=_blank, 클릭 전 요청 없음)뿐. 입력은 절차적 canvas 생성 또는 URL.createObjectURL(로컬 영상)만. 자체 self-test 하니스 6/6 init OK·uncaught 0 보고."
+    },
+    "honesty": {
+      "score": 10,
+      "max": 10,
+      "notes": "[실측]/[논문 보고값]/[상태]/[경량 STAND-IN] 라벨 일관 분리. 캔버스 상시 워터마크로 확산 출력 아님을 노출. W/O 캐시 FPS·baseline 수치·Stage2 NFE 등 미보고 항목을 '논문 미보고'로 정직 표기, 지어낸 값 없음. 79ms/12.66FPS 항등(1/0.079)·프레임당 정합화 각주로 원문 모호성까지 명시."
+    }
+  },
+  "functional_checks": [
+    { "capability": "타일별 L2² 마스크 실계산(1560 tok/latent-frame)", "works": true, "evidence": "le2 computeRaw(): eP[i]-sP[i] 채널제곱합/(TW*TH)로 rawImp[t] 실산출; self-test 'L2² importance(1560 tok) finite' ✓" },
+    { "capability": "min-max 정규화 + kthvalue 상위30% keep 임계(레포식)", "works": true, "evidence": "normArr('minmax')=(rawImp-mn)/rng; kthTau()=sort 후 idx=floor((1-0.30)*N) → 레포 torch.kthvalue(num_tokens-keep_num+1)와 일치; self-test kthTau∈[0,1]·prune≈70% @top-30% ✓" },
+    { "capability": "캐시 재사용 vs 전량 재계산 실측 분기(반응성)", "works": true, "evidence": "streamRun(): imp[t]>=tau editTile 재계산 / imp[t]<tau copyTile 캐시; dt=perf.now() 측정, baseFullMs/emaMs로 speedup 산출; 캐시 OFF 시 전 타일 재계산·prune 0%" },
+    { "capability": "정규화 모드 토글이 실측 prune% 실제로 변경(must_fix#1)", "works": true, "evidence": "pruneAtMode('minmax',0.5) vs ('rank',0.5) self-test가 |차|>0.5 확증; setNorm()이 rawImp 유지·정규화만 교체" },
+    { "capability": "KV 캐시 sink+롤링 eviction 상태 배열(must_fix#2)", "works": true, "evidence": "kvPush(f): 창 차면 KV.slots.splice(KV.sink,1) evict 후 push; kvPaint 슬롯 색/이동 반영; window/sink 슬라이더가 상태 재설정" },
+    { "capability": "실측 지표 vs 논문 보고값 분리 표시", "works": true, "evidence": "le2Fps/le2Ms/le2Speed는 실측(emaMs 기반), '논문 12.66'은 별도 le2-mp; PAPER 상수 라벨 [논문 보고값]" }
+  ],
+  "repo_checks": [
+    { "claim": "denoising_step_list=[1000,750,500,250] +warp_denoising_step", "repo_value": "denoising_step_list: [1000, 750, 500, 250]; warp_denoising_step: true", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "num_frame_per_block=3", "repo_value": "num_frame_per_block: 3", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "adaptive_patch_ratio=0.3 (상위 30% keep → ~70% prune)", "repo_value": "adaptive_patch_ratio: 0.3", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "internal_pruning_layers=['self_attn']", "repo_value": "internal_pruning_layers: [\"self_attn\"]; use_internal_pruning: true", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "internal_pruning_steps=[1,2]", "repo_value": "internal_pruning_steps: [1,2]", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "guidance_scale=3.0 · timestep_shift=5.0 · num_frames=81", "repo_value": "guidance_scale: 3.0; timestep_shift: 5.0; num_frames: 81", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "unpruned_fill_strategy='prev_step' · v2v=true", "repo_value": "unpruned_fill_strategy: \"prev_step\"; v2v: true", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "image_or_video_shape=[1,21,16,60,104] → 21 latent-frame, 60×104, patch(1,2,2)→30×52=1560 tok", "repo_value": "image_or_video_shape: [1, 21, 16, 60, 104]", "file": "configs/wan_mm-token-pruning.yaml", "match": true },
+    { "claim": "마스크식: diff=(gen-src).pow(2).mean(ch), importance=(diff-min)/(max-min+1e-8), τ=torch.kthvalue(num_tokens-keep_num+1), keep=importance>=τ", "repo_value": "diff=(generated_latent-source_latent).pow(2).mean(dim=2); importance=(diff-diff.min())/(diff.max()-diff.min()+1e-8); keep_num=int(num_tokens*adaptive_patch_ratio); threshold=torch.kthvalue(importance_frame, num_tokens-keep_num+1).values; high=(importance>=threshold)", "file": "pipeline/causal_inference.py", "match": true },
+    { "claim": "베이스 모델 Wan2.1-T2V-1.3B", "repo_value": "built on Wan2.1, uses Wan2.1-T2V-1.3B pretrained", "file": "README / setup", "match": true },
+    { "claim": "12.66 FPS · 79 ms/frame (레포 미기재 논문 전용 수치)", "repo_value": "config/소스에 FPS·지연 수치 없음 — 앱이 [논문 보고값]으로만 라벨(attribution 정확)", "file": "(repo에 없음)", "match": true }
+  ],
+  "must_fix": [
+    "(비차단·미세) DMD Real/Fake score 및 teacher-forcing 학습은 현재 시각/설명 수준 — 다음 루프에서 소형 toy DMD gradient(fake-real 차 정규화 후 MSE) 라도 실계산으로 시연하면 method_fidelity 만점 근접.",
+    "(비차단·정직) baseline VBench 개별값은 논문 미보고이므로 비교막대 부재가 맞음 — 유지. 임의값 채우지 말 것."
+  ],
+  "learned": [
+    "공식 저장소 configs/wan_mm-token-pruning.yaml + pipeline/causal_inference.py 로 앱의 코드 수준 값·마스크식을 전부 대조 가능했고 전 항목 일치 — repo_fidelity 만점 근거는 실소스 인용.",
+    "마스크식 정합 포인트: min-max는 단조변환이라 kthvalue 상위30% keep-set은 raw L2와 동일 → 앱이 raw L2 위에서 직접 kthvalue 등가 임계를 잡아도 레포 정합(단, τ 슬라이더의 절대 prune%는 정규화 모드에 의존하므로 min-max/rank 분리 라벨이 정확).",
+    "12.66 FPS·79 ms는 레포 소스에 없는 논문 전용 수치 → 반드시 [논문 보고값]으로만 라벨하고 실측 stand-in과 분리해야 함(코드 귀속 금지). 이 앱은 이를 정확히 준수.",
+    "핵심 알고리즘이 실제 계산(L2→kthvalue→cache 분기, perf.now 측정)으로 구현되고 컨트롤이 실측을 바꾸면 functional_reproduction 고득점 — 애니메이션 목업과의 결정적 차이."
+  ]
+}
